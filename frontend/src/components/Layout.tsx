@@ -3,9 +3,10 @@ import { useAuth } from '../contexts/AuthContext'
 
 const NAV_OWNER = [
   { to: '/', label: 'Dashboard', end: true },
-  { to: '/alerts', label: 'Alerts', end: false },
+  { to: '/vehicles', label: 'Vehicles', end: false },
   { to: '/devices', label: 'Devices', end: false },
   { to: '/geofences', label: 'Geofences', end: false },
+  { to: '/alerts', label: 'Alerts', end: false },
   { to: '/reports', label: 'Reports', end: false },
   { to: '/fleetview', label: 'FleetView AI', end: false },
 ]

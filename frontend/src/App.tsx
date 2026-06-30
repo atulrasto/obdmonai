@@ -9,6 +9,7 @@ import VehicleView from './pages/VehicleView'
 import Trips from './pages/Trips'
 import Alerts from './pages/Alerts'
 import Devices from './pages/Devices'
+import Vehicles from './pages/Vehicles'
 import Geofences from './pages/Geofences'
 import Reports from './pages/Reports'
 import FleetView from './pages/FleetView'
@@ -61,6 +62,7 @@ export default function App() {
                     </RequireSuperAdmin>
                   }
                 />
+                <Route path="/vehicles" element={<Vehicles />} />
                 <Route path="/vehicles/:id" element={<VehicleView />} />
                 <Route path="/vehicles/:id/trips" element={<Trips />} />
                 <Route path="/alerts" element={<Alerts />} />
