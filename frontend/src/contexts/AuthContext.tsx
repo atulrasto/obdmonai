@@ -2,8 +2,9 @@ import { createContext, useContext, useState, type ReactNode } from 'react'
 
 interface JwtPayload {
   sub: string
-  client_id: string
+  client_id: string | null
   role: string
+  must_change_password: boolean
   exp: number
 }
 
@@ -20,6 +21,7 @@ interface AuthState {
   token: string | null
   clientId: string | null
   role: string | null
+  mustChangePassword: boolean
   setToken: (token: string | null) => void
   logout: () => void
 }
@@ -52,6 +54,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         token,
         clientId: parsed?.client_id ?? null,
         role: parsed?.role ?? null,
+        mustChangePassword: parsed?.must_change_password ?? false,
         setToken,
         logout,
       }}

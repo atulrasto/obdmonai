@@ -18,7 +18,13 @@ export default function Login() {
     try {
       const resp = await login(email, password)
       setToken(resp.access_token)
-      navigate('/')
+      if (resp.must_change_password) {
+        navigate('/change-password', { replace: true })
+      } else if (resp.access_token) {
+        // Decode role to decide where to go
+        const payload = JSON.parse(atob(resp.access_token.split('.')[1]))
+        navigate(payload.role === 'superadmin' ? '/admin' : '/', { replace: true })
+      }
     } catch {
       setError('Invalid credentials — check your email and password.')
     } finally {
@@ -36,7 +42,7 @@ export default function Login() {
             <label htmlFor="email">Email</label>
             <input
               id="email"
-              type="email"
+              type="text"
               autoComplete="email"
               value={email}
               onChange={(e) => setEmail(e.target.value)}

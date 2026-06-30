@@ -24,6 +24,17 @@ def _gen_password(length: int = 16) -> str:
     return "".join(secrets.choice(_PW_ALPHABET) for _ in range(length))
 
 
+@router.get("", response_model=list[ClientRead])
+async def list_clients(
+    _user: TokenData = Depends(require_role("superadmin")),
+    db: AsyncSession = Depends(get_db),
+) -> list[ClientRead]:
+    """List all tenants. Superadmin only."""
+    from sqlalchemy import asc
+    clients = (await db.execute(select(Client).order_by(asc(Client.created_at)))).scalars().all()
+    return [ClientRead.model_validate(c) for c in clients]
+
+
 @router.post("", response_model=ClientCreateResponse, status_code=status.HTTP_201_CREATED)
 async def create_client(
     body: ClientCreate,

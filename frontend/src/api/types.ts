@@ -1,16 +1,23 @@
 // API response types — derived from backend Pydantic schemas.
-// Re-generate at any time with: npm run gen-api
 
 export interface TokenResponse {
   access_token: string
+  refresh_token: string
   token_type: string
+  must_change_password: boolean
 }
 
 export interface ClientRead {
   id: string
   name: string
   slug: string
+  is_active: boolean
   created_at: string
+}
+
+export interface ClientCreateResponse extends ClientRead {
+  owner_email: string
+  temp_password: string
 }
 
 export interface VehicleRead {
@@ -138,4 +145,10 @@ export interface GeofenceCreateRequest {
   lat: number
   lon: number
   radius_m: number
+}
+
+export interface ClientCreateRequest {
+  name: string
+  slug: string
+  owner_email: string
 }
