@@ -30,6 +30,7 @@ htmlcov/
 node_modules/
 frontend/dist/
 frontend/.vite/
+frontend/*.tsbuildinfo
 
 # Docker
 *.override.yml
