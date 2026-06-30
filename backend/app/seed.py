@@ -29,9 +29,9 @@ CLIENT_NAME   = "Acme Logistics"
 CLIENT_SLUG   = "acme-logistics"
 
 VEHICLES = [
-    {"vin": "ACME01VOLVO0FH1600", "make": "Volvo",    "model_name": "FH16",    "year": 2023},
-    {"vin": "ACME02SCANI0R45000", "make": "Scania",   "model_name": "R450",    "year": 2022},
-    {"vin": "ACME03MERCE0ACTROS", "make": "Mercedes", "model_name": "Actros",  "year": 2024},
+    {"vin": "ACME01VOLVO0FH160", "make": "Volvo",    "model_name": "FH16",    "year": 2023},
+    {"vin": "ACME02SCANI0R4500", "make": "Scania",   "model_name": "R450",    "year": 2022},
+    {"vin": "ACME03MERCE0ACTRO", "make": "Mercedes", "model_name": "Actros",  "year": 2024},
 ]
 SERIALS = ["OBU-ACM-0001", "OBU-ACM-0002", "OBU-ACM-0003"]
 
