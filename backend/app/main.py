@@ -7,9 +7,12 @@ from typing import AsyncIterator
 import structlog
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from sqlalchemy import text
 
 from app.api import alerts, analytics, auth, clients, devices, fleetview, geofences, reports, scores, vehicles
 from app.config import settings
+from app.db import get_session
+from app.security.password import hash_password
 
 
 def _configure_logging() -> None:
@@ -44,8 +47,32 @@ _configure_logging()
 _log = structlog.get_logger(__name__)
 
 
+async def _seed_superadmin() -> None:
+    """Create the superadmin user from env vars if they don't already exist."""
+    if not settings.superadmin_email or not settings.superadmin_password:
+        return
+    factory = get_session()
+    async with factory() as session:
+        row = (
+            await session.execute(
+                text("SELECT * FROM auth_get_user_by_email(:e)"),
+                {"e": settings.superadmin_email},
+            )
+        ).fetchone()
+        if row is None:
+            await session.execute(
+                text("SELECT auth_create_superadmin(:e, :h)"),
+                {"e": settings.superadmin_email, "h": hash_password(settings.superadmin_password)},
+            )
+            await session.commit()
+            _log.info("superadmin created", email=settings.superadmin_email)
+        else:
+            _log.info("superadmin already exists", email=settings.superadmin_email)
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncIterator[None]:
+    await _seed_superadmin()
     _log.info("startup", environment=settings.environment)
     yield
     _log.info("shutdown")

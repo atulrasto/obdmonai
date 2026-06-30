@@ -30,16 +30,22 @@ class Settings(BaseSettings):
     anthropic_api_key: str = ""
     anthropic_model: str = "claude-sonnet-4-6"
 
-    # Notifications (Tier A alerts)
+    # Notifications (Tier A alerts + welcome emails)
     smtp_host: str = ""
     smtp_port: int = 587
     smtp_user: str = ""
     smtp_password: str = ""
     smtp_from: str = "alerts@example.com"
-    smtp_to: str = ""          # comma-separated recipient addresses
+    smtp_tls: bool = False      # True = SSL on port 465; False = STARTTLS on port 587
+    smtp_to: str = ""          # comma-separated recipient addresses for Tier A alerts
     webhook_url: str = ""      # optional HTTP POST endpoint for alert events
 
+    # Superadmin (platform owner, seeded on startup)
+    superadmin_email: str = ""
+    superadmin_password: str = ""
+
     # App
+    cell_domain: str = "localhost"   # public hostname for dashboard links in emails
     log_level: str = "INFO"
     environment: str = "development"
 

@@ -18,6 +18,11 @@ _401 = HTTPException(
     headers={"WWW-Authenticate": "Bearer"},
 )
 
+_CHANGE_PW = HTTPException(
+    status_code=status.HTTP_403_FORBIDDEN,
+    detail="password_change_required",
+)
+
 
 async def get_current_user(token: str = Depends(oauth2_scheme)) -> TokenData:
     try:
@@ -27,11 +32,16 @@ async def get_current_user(token: str = Depends(oauth2_scheme)) -> TokenData:
 
 
 def require_role(*allowed: str):
-    """Return a dependency that checks the caller's role and returns TokenData."""
+    """Return a dependency that checks role and enforces password-change gate."""
 
     async def _check(user: TokenData = Depends(get_current_user)) -> TokenData:
+        if user.must_change_password:
+            raise _CHANGE_PW
         if user.role not in allowed:
-            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Insufficient permissions")
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Insufficient permissions",
+            )
         return user
 
     return _check
@@ -41,11 +51,16 @@ async def get_tenant_db(
     user: TokenData = Depends(get_current_user),
 ) -> AsyncIterator[AsyncSession]:
     """Yield a DB session with the tenant RLS GUC set for the transaction."""
+    if user.must_change_password:
+        raise _CHANGE_PW
+    if user.client_id is None:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Superadmin has no tenant context",
+        )
     factory = get_session()
     async with factory() as session:
         async with session.begin():
-            # PostgreSQL SET does not accept $N bind params; UUID is safe to
-            # interpolate directly (only hex digits and hyphens per RFC 4122).
             await session.execute(
                 text(f"SET LOCAL app.current_client_id = '{user.client_id}'")
             )

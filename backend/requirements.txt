@@ -18,6 +18,9 @@ pydantic[email]>=2.7
 # MQTT
 aiomqtt>=2.0
 
+# Email
+aiosmtplib>=3.0
+
 # CBOR payload
 cbor2>=5.6
 

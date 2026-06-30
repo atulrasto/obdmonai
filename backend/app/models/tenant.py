@@ -27,25 +27,26 @@ class Client(Base):
 
 
 class User(Base):
-    """Application user. client_id is the RLS key."""
+    """Application user. client_id is the RLS key (NULL for superadmin)."""
 
     __tablename__ = "users"
 
     id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
     )
-    client_id: Mapped[uuid.UUID] = mapped_column(
+    client_id: Mapped[uuid.UUID | None] = mapped_column(
         UUID(as_uuid=True),
         ForeignKey("clients.id", ondelete="CASCADE"),
-        nullable=False,
+        nullable=True,   # NULL for superadmin (no tenant)
         index=True,
     )
     email: Mapped[str] = mapped_column(Text, unique=True, nullable=False)
     password_hash: Mapped[str] = mapped_column(Text, nullable=False)
     role: Mapped[str] = mapped_column(
         String(20), nullable=False
-    )  # owner | fleet_admin | viewer
+    )  # superadmin | owner | fleet_admin | viewer
     is_active: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default="true")
+    must_change_password: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default="false")
     created_at: Mapped[datetime] = mapped_column(
         "created_at", String, nullable=False, server_default="now()"
     )

@@ -11,19 +11,26 @@ from app.config import settings
 
 class TokenData(BaseModel):
     user_id: uuid.UUID
-    client_id: uuid.UUID
-    role: str  # owner | fleet_admin | viewer
+    client_id: uuid.UUID | None   # None for superadmin (no tenant)
+    role: str                     # superadmin | owner | fleet_admin | viewer
+    must_change_password: bool = False
 
 
 def _now() -> datetime:
     return datetime.now(timezone.utc)
 
 
-def create_access_token(user_id: uuid.UUID, client_id: uuid.UUID, role: str) -> str:
+def create_access_token(
+    user_id: uuid.UUID,
+    client_id: uuid.UUID | None,
+    role: str,
+    must_change_password: bool = False,
+) -> str:
     payload = {
         "sub": str(user_id),
-        "client_id": str(client_id),
+        "client_id": str(client_id) if client_id else None,
         "role": role,
+        "must_change_password": must_change_password,
         "type": "access",
         "exp": _now() + timedelta(minutes=settings.jwt_access_token_expire_minutes),
     }
@@ -48,10 +55,12 @@ def decode_access_token(token: str) -> TokenData:
         raise ValueError("invalid token") from exc
     if payload.get("type") != "access":
         raise ValueError("not an access token")
+    cid = payload.get("client_id")
     return TokenData(
         user_id=uuid.UUID(payload["sub"]),
-        client_id=uuid.UUID(payload["client_id"]),
+        client_id=uuid.UUID(cid) if cid else None,
         role=payload["role"],
+        must_change_password=payload.get("must_change_password", False),
     )
 
 
