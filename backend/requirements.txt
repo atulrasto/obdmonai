@@ -16,7 +16,7 @@ python-multipart>=0.0.9
 pydantic[email]>=2.7
 
 # MQTT
-asyncio-mqtt>=0.16
+aiomqtt>=2.0
 
 # CBOR payload
 cbor2>=5.6

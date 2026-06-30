@@ -11,7 +11,7 @@ import ssl
 from datetime import timezone
 
 import cbor2
-from asyncio_mqtt import Client, MqttError
+from aiomqtt import Client, MqttError
 from sqlalchemy import String, bindparam, text
 from sqlalchemy.dialects.postgresql import ARRAY
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
