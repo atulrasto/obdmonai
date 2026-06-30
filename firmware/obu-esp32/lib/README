@@ -1,0 +1,16 @@
+All firmware dependencies are managed via PlatformIO's lib_deps in platformio.ini.
+No local lib/ subdirectories are required.
+
+Dependencies:
+  knolleary/PubSubClient@^2.8.0     — MQTT client
+  mikalhart/TinyGPSPlus@^1.0.3      — NMEA sentence parser for GNSS
+  electroniccats/MPU6050@^1.3.0     — MPU-6050 accelerometer/gyroscope
+
+ESP32 built-ins used (no extra install needed):
+  driver/twai.h    — TWAI (CAN bus) controller
+  LittleFS         — flash filesystem for TLS certs
+  Preferences      — NVS key-value store for provisioning data
+  WiFiClientSecure — TLS on top of WiFi
+  SD, SPI          — SD card for store-and-forward ring buffer
+  HardwareSerial   — UART2 for GNSS
+  Wire             — I2C for IMU

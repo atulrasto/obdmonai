@@ -1,0 +1,50 @@
+# Secrets and environment
+.env
+*.pem
+*.key
+*.crt
+*.p12
+infra/mosquitto/certs/
+
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+*.egg-info/
+.eggs/
+dist/
+build/
+.venv/
+venv/
+.mypy_cache/
+.ruff_cache/
+.pytest_cache/
+htmlcov/
+.coverage
+*.egg
+
+# Alembic
+# (keep versions/ tracked, but not compiled caches)
+
+# Node / Frontend
+node_modules/
+frontend/dist/
+frontend/.vite/
+
+# Docker
+*.override.yml
+
+# OS
+.DS_Store
+Thumbs.db
+
+# IDE
+.vscode/settings.json
+.idea/
+*.swp
+*.swo
+
+# PlatformIO
+firmware/obu-esp32/.pio/
+firmware/obu-esp32/.pioenvs/
+firmware/obu-esp32/data/       # LittleFS provisioning data — contains device private keys

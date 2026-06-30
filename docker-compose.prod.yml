@@ -1,0 +1,55 @@
+# Production overrides — use with:
+#   docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d
+#
+# Key differences from dev:
+#   - No host-side port bindings for db / API (internal only)
+#   - MQTT bound to all interfaces for device connectivity
+#   - No dev profiles (mailhog, simulator)
+#   - Strict restart policies
+#   - Resource limits on compute-heavy services
+
+name: obdmonai
+
+services:
+
+  db:
+    ports: []           # not exposed to host in production
+    restart: always
+
+  pgbouncer:
+    restart: always
+
+  mosquitto:
+    ports:
+      - "0.0.0.0:8884:8883"   # MQTT/TLS accessible from devices
+    restart: always
+
+  migrate:
+    restart: "no"
+
+  backend:
+    ports: []           # not exposed; Caddy proxies internally
+    environment:
+      ENVIRONMENT: production
+    deploy:
+      resources:
+        limits:
+          cpus: "2"
+          memory: 1G
+    restart: always
+
+  ingest:
+    environment:
+      ENVIRONMENT: production
+    deploy:
+      resources:
+        limits:
+          cpus: "1"
+          memory: 512M
+    restart: always
+
+  frontend:
+    restart: always
+
+  caddy:
+    restart: always

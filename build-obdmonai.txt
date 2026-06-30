@@ -1,0 +1,202 @@
+# obdmonai — Claude Code build prompt
+
+**How to use this file.** Open the empty `obdmonai` project in VS Code, start the Claude Code agent, and paste this entire document as your first message. It is written as instructions *to the agent*. It is deliberately phase-gated: the agent builds one phase, runs the tests, commits, summarises, and **stops for your review** before the next phase. Do not let it build everything in one shot.
+
+---
+
+## 0. Your role and how to work
+
+You are building **obdmonai**, a multi-tenant SaaS platform that ingests OBD-II / CAN telematics from in-vehicle On-Board Units (OBUs), stores it, runs deterministic alerts and ML analytics on it, and serves a dashboard. The architecture is the direct sibling of two existing systems (`energyMon`, `icumonai`): same MQTT → FastAPI → TimescaleDB spine, same Tier A / Tier B separation, same SmartView-style read-only LLM layer.
+
+**Working rules — follow these every session:**
+
+1. At the start of every session, read `CLAUDE.md` and `PROGRESS.md` before doing anything else.
+2. Work **strictly phase by phase** in the order below. Do not skip ahead or scaffold future phases early.
+3. For each phase: implement the steps → run the phase's acceptance tests → make them pass → update `PROGRESS.md` → commit with a conventional-commit message → write a short summary of what changed and what the next phase will do → **then stop and wait for my go-ahead.**
+4. Prefer creating the file, then reading it back to verify it is correct.
+5. **Ask before any destructive action** (deleting files, dropping tables, force-pushing, overwriting non-empty files).
+6. Never commit secrets, private keys, or real certificates. Everything sensitive comes from `.env` (gitignored) and is documented in `.env.example`.
+7. If a step is ambiguous, state your assumption explicitly in the summary rather than guessing silently.
+8. Keep commits small — ideally one per completed step.
+
+---
+
+## 1. Project constitution (write this into `CLAUDE.md` as your first action)
+
+These invariants are non-negotiable for the whole project. Create `CLAUDE.md` containing this section verbatim before writing any code.
+
+- **Schema only via Alembic.** Never call `Base.metadata.create_all()`. Every schema change is an Alembic migration. Migrations are **idempotent** (use `IF NOT EXISTS` / guarded DDL) and have working `downgrade()`.
+- **Least-privilege DB.** The application connects as a **non-superuser** role. Tenant isolation is enforced by **PostgreSQL Row-Level Security (RLS)**, not application code alone.
+- **Tenant key everywhere.** `client_id` is **denormalised onto every tenant-scoped table** and is the RLS key. Every query path sets the tenant context.
+- **Telemetry is append-only.** The telemetry hypertable is insert-only. Never update or delete rows in normal operation. Store the **device event timestamp** (when the reading happened on the vehicle), never the cloud arrival time.
+- **Tier A vs Tier B separation.** Tier A (deterministic source of truth: capture, store, threshold/rule alerts) must **never import from or depend on** Tier B (ML / LLM augmentation). Tier B reads from Tier A's data; never the reverse. The dependency arrow points one way only.
+- **TLS everywhere.** MQTT on 8883 (TLS), HTTP behind Caddy with auto-HTTPS. No plaintext transport in any compose file meant for deployment.
+- **Tests gate progress.** A phase is not "done" until its acceptance tests pass. Maintain a growing pytest suite; never let previously passing tests regress.
+- **No secrets in git.** Keys, tokens, passwords, certs → `.env` / mounted secrets only. `.env.example` documents every variable with safe placeholder values.
+
+---
+
+## 2. Tech stack (pin these)
+
+- **Backend:** Python 3.12, FastAPI, SQLAlchemy 2.x (typed), Alembic, Pydantic v2, `asyncpg`.
+- **Database:** PostgreSQL 16 + **TimescaleDB** extension; **pgbouncer** in front.
+- **Messaging:** Eclipse **Mosquitto** with TLS on 8883; ingest worker uses `asyncio-mqtt` (or `paho`).
+- **Reverse proxy:** **Caddy 2** (automatic HTTPS).
+- **Frontend:** React + **Vite** + **TypeScript** + **Recharts** + a map library (MapLibre GL).
+- **Orchestration:** **Docker Compose** (one stack, profiles for dev vs prod).
+- **Reports:** ReportLab (PDF), as in energyMon.
+- **LLM:** Anthropic API (server-side only) for the FleetView summaries — model string configurable via env.
+- **Tests:** pytest + pytest-asyncio; httpx for API tests; a small MQTT publisher harness.
+- **Tooling:** ruff + black + mypy; pre-commit; Makefile; Node 20 for the frontend.
+
+---
+
+## 3. Target repository layout (create in Phase 1, fill in later phases)
+
+```
+obdmonai/
+├── CLAUDE.md
+├── PROGRESS.md
+├── README.md
+├── .env.example
+├── .gitignore
+├── Makefile
+├── docker-compose.yml
+├── docker-compose.prod.yml
+├── pyproject.toml
+├── backend/
+│   ├── app/
+│   │   ├── main.py
+│   │   ├── config.py
+│   │   ├── db.py                # async engine/session, RLS tenant context
+│   │   ├── models/             # SQLAlchemy models
+│   │   ├── schemas/            # Pydantic models
+│   │   ├── api/                # routers: auth, clients, vehicles, devices, telemetry, alerts, analytics, fleetview
+│   │   ├── security/           # JWT, RBAC, password hashing
+│   │   ├── tier_a/             # deterministic rules engine + alert dispatch
+│   │   ├── tier_b/             # ML feature extraction, scoring, anomaly (isolated)
+│   │   ├── fleetview/          # read-only LLM summariser
+│   │   └── ingest/             # MQTT subscriber → hypertable writer
+│   ├── alembic/
+│   │   ├── env.py
+│   │   └── versions/
+│   └── tests/
+├── infra/
+│   ├── mosquitto/             # mosquitto.conf, certs/ (gitignored), gen-certs script
+│   ├── pgbouncer/
+│   └── caddy/                 # Caddyfile
+├── frontend/
+│   └── (Vite React TS app)
+└── firmware/
+    └── obu-esp32/             # PlatformIO project
+```
+
+---
+
+## 4. Canonical data contracts (use these exact shapes)
+
+**MQTT topic:** `obdmonai/{client_id}/vehicle/{vin}/telemetry`
+
+**Telemetry payload (device → cloud), CBOR or compact JSON:**
+
+```json
+{
+  "device_id": "uuid",
+  "vin": "string",
+  "ts": "ISO-8601 device event time (UTC)",
+  "seq": 12345,
+  "gps": { "lat": 0.0, "lon": 0.0, "alt": 0.0, "hdg": 0.0, "spd": 0.0 },
+  "obd": { "rpm": 0, "speed": 0, "coolant": 0, "load": 0, "throttle": 0,
+           "intake_temp": 0, "fuel_level": 0, "run_time": 0 },
+  "imu": { "ax": 0.0, "ay": 0.0, "az": 0.0, "gx": 0.0, "gy": 0.0, "gz": 0.0 },
+  "dtc": ["P0301"],
+  "ign": true
+}
+```
+
+**Telemetry hypertable columns (append-only):**
+`time (timestamptz, device ts)`, `client_id (uuid)`, `vehicle_id (uuid)`, `device_id (uuid)`, `seq (bigint)`, the flattened `gps_*`, `obd_*`, `imu_*` numeric columns, `dtc (text[])`, `ign (bool)`, `received_at (timestamptz default now())`. Primary dedupe key: `(device_id, seq)`.
+
+---
+
+## 5. The phases
+
+> Implement one phase, make its acceptance tests pass, commit, summarise, **stop for review.**
+
+### Phase 1 — Scaffold and tooling
+- Create the directory layout (Section 3), `CLAUDE.md` (Section 1), `PROGRESS.md` (a checklist of all phases), `README.md`.
+- `pyproject.toml` with deps and ruff/black/mypy config; `.gitignore` (env, certs, `__pycache__`, `node_modules`, build dirs); `.env.example` with every variable (DB, JWT secret, MQTT, Anthropic key/model, Caddy domain).
+- `docker-compose.yml` skeleton with named services: `db` (timescaledb), `pgbouncer`, `mosquitto`, `backend`, `ingest`, `frontend`, `caddy` — healthchecks stubbed.
+- `Makefile` targets: `up`, `down`, `migrate`, `test`, `lint`, `fmt`, `seed`, `certs`.
+- pre-commit config (ruff, black, mypy).
+- **Acceptance:** `docker compose config` is valid; `make lint` passes on the empty package; repo initialised with first commit.
+
+### Phase 2 — Database, migrations, RLS, hypertable
+- `db` service on TimescaleDB (Postgres 16); pgbouncer config in `infra/pgbouncer`.
+- `alembic init`; `env.py` wired to async URL and models metadata.
+- Migration **0001**: enable `timescaledb`; create the **non-superuser app role**; base schema/grants.
+- Migration **0002**: tenant tables — `clients`, `users`, `vehicles`, `devices` (with `client_id` denormalised on each); **enable RLS** and add policies keyed on a per-session `app.current_client_id` GUC.
+- Migration **0003**: `telemetry` hypertable (Section 4 columns); `create_hypertable`; indexes on `(client_id, vehicle_id, time desc)`; unique `(device_id, seq)`.
+- Migration **0004**: continuous aggregates — `telemetry_1m` and `telemetry_1h` (avg/min/max of speed, rpm, coolant; sums for distance/idle); add refresh + retention policies.
+- **Acceptance:** `alembic upgrade head` then `downgrade base` run cleanly and repeatably; a pytest checks the hypertable exists, RLS is enabled on tenant tables, and the app role is non-superuser.
+
+### Phase 3 — Backend core (auth, tenancy, CRUD)
+- `config.py` (pydantic-settings), `db.py` (async session + a context manager that sets `app.current_client_id` for RLS), `main.py` (app factory, health endpoint).
+- JWT auth (`/auth/login`, refresh), password hashing, RBAC roles (`owner`, `fleet_admin`, `viewer`).
+- Tenant middleware: resolve `client_id` from the authenticated principal and set the RLS GUC on the session.
+- CRUD routers: clients (owner only), vehicles, devices; device **provisioning** endpoint that issues a device identity (id + credentials/cert CSR flow — store fingerprint, never the private key).
+- **Acceptance:** pytest covers login/RBAC, vehicle/device CRUD, and a **cross-tenant isolation test** proving tenant A cannot read tenant B's rows even with a forged `client_id`.
+
+### Phase 4 — MQTT ingest pipeline
+- `infra/mosquitto`: `mosquitto.conf` (TLS 8883, require client cert), and a `gen-certs` script that creates a local CA + server cert + sample device certs into a **gitignored** `certs/` dir.
+- Ingest worker (`app/ingest`): async subscriber to `obdmonai/+/vehicle/+/telemetry`; validate payload against the Pydantic schema; verify the device→client→vehicle mapping (reject if the topic's `client_id`/`vin` don't match the device's registration); insert into the hypertable with the **device timestamp** and denormalised `client_id`; dedupe on `(device_id, seq)`; accept **late/out-of-order** messages (store-and-forward backfill).
+- A test publisher harness in `tests/` that emits N realistic messages, including a duplicate and an out-of-order one, and a spoofed-tenant one.
+- **Acceptance:** harness run lands the correct rows; duplicate is ignored; out-of-order row is stored at its device time; spoofed-tenant message is rejected and logged.
+
+### Phase 5 — Tier A: deterministic rules and alerts
+- Rules engine (pure, deterministic, no ML): overspeed, harsh-braking (IMU threshold), geofence enter/exit, coolant overheating, **new DTC appeared**, excessive idling, fuel-level anomaly.
+- **Hysteresis** on every rule (separate set/clear thresholds) so alerts don't flap; `alerts` table; dedupe/debounce.
+- Notification dispatch: email + webhook, with delivery dedupe.
+- **Acceptance:** unit tests for each rule including hysteresis edge cases; an end-to-end test where seeded telemetry produces exactly the expected alert set.
+
+### Phase 6 — Analytics API (aggregate-backed)
+- Endpoints: trips list + trip detail (segment by ignition/idle gaps), per-vehicle KPIs (distance, drive time, idle time, harsh-event counts, avg/max speed), fleet rollup. Back them with the continuous aggregates from Phase 2.
+- **Acceptance:** analytics endpoints return correct numbers against a deterministic seeded dataset.
+
+### Phase 7 — Tier B: ML (isolated module)
+- `app/tier_b`, importing **nothing** from `tier_a`. Feature extraction over sliding windows; a **driver-behaviour score** (gradient-boosting baseline) and a **predictive-maintenance anomaly** detector (statistical drift / isolation forest baseline). Model versioning + a read-only inference endpoint.
+- **Acceptance:** train/predict tests on synthetic data; an architectural test asserting `tier_a` does not import `tier_b` and the inference path is read-only.
+
+### Phase 8 — FleetView: read-only LLM layer
+- `app/fleetview`: assembles **structured, already-computed** facts (KPIs, alerts, anomaly flags) and asks the Anthropic API (model from env) for natural-language vehicle-health and driver-coaching summaries. Strictly read-only; no tool access; redact identifiers before sending; never feeds back into Tier A/B decisions.
+- **Acceptance:** prompt-assembly + redaction unit tests with the API mocked; a guard test proving FleetView cannot write to the DB.
+
+### Phase 9 — Frontend (React/Vite/TS)
+- Auth flow; fleet dashboard; vehicle live view (Recharts time series); map view (MapLibre) for trips + geofences; alerts view; device provisioning UI; FleetView summary panel. Typed API client generated from the OpenAPI schema.
+- **Acceptance:** `npm run build` succeeds; a smoke test renders the dashboard and one vehicle view against mocked data.
+
+### Phase 10 — Reverse proxy, full stack, ops
+- Caddy `Caddyfile` (auto-HTTPS, routes to backend + frontend); finalise `docker-compose.yml` (dev) and `docker-compose.prod.yml` (prod) with healthchecks and restart policies; structured logging; a `seed` command for demo data; ReportLab PDF report endpoint; a `RUNBOOK.md` (backup/restore, cert rotation, scaling notes).
+- **Acceptance:** `make up` brings the whole stack healthy; an end-to-end smoke test (publish telemetry → see it via API → render in frontend) passes.
+
+### Phase 11 — Firmware (`firmware/obu-esp32`, PlatformIO)
+- ESP-IDF/Arduino project for ESP32-WROOM. TWAI (CAN) init using **GPIO5=TX, GPIO4=RX** into an SN65HVD230 transceiver wired to OBD-II **pin 6 (CAN-H) / pin 14 (CAN-L)**; **do not** add a 120 Ω terminator (the vehicle bus is already terminated). 10-second loop: poll PIDs (`010C` rpm, `010D` speed, `0105` coolant, `0104` load, `0111` throttle, `012F` fuel, Mode 03 DTCs, Mode 09 VIN once), read GNSS + IMU (I2C), stamp **device time**, encode the Section-4 payload (CBOR), push to a **store-and-forward ring buffer** (SD over SPI), publish over **MQTT/TLS** on reconnect with QoS 1. **Deep-sleep on ignition-off** (detect via CAN bus going quiet) and cut peripheral power via a load switch to protect the vehicle battery (OBD pin 16 is always live). Provisioning loads the per-device cert/key from secure storage.
+- **Acceptance:** firmware builds for the ESP32 target; host-side unit tests for the payload encoder match the backend's Pydantic schema; `firmware/README.md` documents the wiring and pinout.
+
+---
+
+## 6. Definition of done (whole project)
+
+- `make up` starts a healthy stack; a simulated OBU can publish over MQTT/TLS and the data appears in the dashboard.
+- Full pytest suite green; cross-tenant isolation, dedupe, Tier A/B separation, and FleetView read-only guards all covered.
+- No secrets in git; `.env.example` complete; `RUNBOOK.md` present.
+- `PROGRESS.md` reflects every completed phase.
+
+---
+
+## 7. First action
+
+Do **only** this now, then stop and show me:
+1. Create `CLAUDE.md` (Section 1) and `PROGRESS.md` (the phase checklist).
+2. Create the directory skeleton (Section 3) with empty/stub files.
+3. Summarise what you created and confirm you understand the phase-gated workflow. **Do not start Phase 2 until I say go.**

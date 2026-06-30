@@ -1,0 +1,27 @@
+# Caddyfile — obdmonai reverse proxy
+# CADDY_DOMAIN defaults to "localhost" for local dev (Caddy issues a local cert).
+# Set CADDY_DOMAIN=yourdomain.com in .env for production auto-HTTPS.
+
+{
+    email {$CADDY_EMAIL:admin@example.com}
+}
+
+{$CADDY_DOMAIN:localhost} {
+    encode gzip
+
+    # API: strip the /api prefix Vite/React adds and forward to the FastAPI backend
+    handle /api/* {
+        uri strip_prefix /api
+        reverse_proxy backend:8000
+    }
+
+    # Direct health check — no prefix strip (for load-balancer / orchestrator probes)
+    handle /health {
+        reverse_proxy backend:8000
+    }
+
+    # Everything else → React SPA served by nginx inside the frontend container
+    handle {
+        reverse_proxy frontend:80
+    }
+}
