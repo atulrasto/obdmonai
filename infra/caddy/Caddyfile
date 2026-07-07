@@ -4,9 +4,10 @@
 
 {
     email {$CADDY_EMAIL:admin@example.com}
+    auto_https {$CADDY_AUTO_HTTPS:off}
 }
 
-{$CADDY_DOMAIN:localhost} {
+{$CADDY_SCHEME:http}://{$CADDY_DOMAIN:localhost} {
     encode gzip
 
     # API: strip the /api prefix Vite/React adds and forward to the FastAPI backend

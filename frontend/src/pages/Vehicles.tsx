@@ -1,7 +1,7 @@
 import { useEffect, useState, type FormEvent } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { listVehicles, createVehicle } from '../api/client'
-import type { VehicleRead } from '../api/types'
+import { listVehicles, createVehicle, listDevices, listSimStatus, startSim, stopSim } from '../api/client'
+import type { VehicleRead, DeviceRead } from '../api/types'
 
 function fmtDate(iso: string) {
   return new Date(iso).toLocaleDateString([], { dateStyle: 'medium' })
@@ -9,6 +9,9 @@ function fmtDate(iso: string) {
 
 export default function Vehicles() {
   const [vehicles, setVehicles] = useState<VehicleRead[]>([])
+  const [devices, setDevices] = useState<DeviceRead[]>([])
+  const [simRunning, setSimRunning] = useState<Record<string, boolean>>({})
+  const [simBusy, setSimBusy] = useState<Record<string, boolean>>({})
   const [loading, setLoading] = useState(true)
   const [showForm, setShowForm] = useState(false)
   const [vin, setVin] = useState('')
@@ -20,8 +23,12 @@ export default function Vehicles() {
   const navigate = useNavigate()
 
   async function reload() {
-    const data = await listVehicles()
-    setVehicles(data)
+    const [v, d, sims] = await Promise.all([listVehicles(), listDevices(), listSimStatus()])
+    setVehicles(v)
+    setDevices(d)
+    const simMap: Record<string, boolean> = {}
+    sims.forEach((s) => { simMap[s.vehicle_id] = s.is_running })
+    setSimRunning(simMap)
   }
 
   useEffect(() => {
@@ -47,6 +54,22 @@ export default function Vehicles() {
       setSubmitting(false)
     }
   }
+
+  async function toggleSim(vehicleId: string, running: boolean) {
+    setSimBusy((b) => ({ ...b, [vehicleId]: true }))
+    try {
+      const result = running ? await stopSim(vehicleId) : await startSim(vehicleId)
+      setSimRunning((s) => ({ ...s, [vehicleId]: result.is_running }))
+    } catch (err: unknown) {
+      const detail = (err as { response?: { data?: { detail?: string } } })?.response?.data?.detail
+      alert(detail ?? 'Failed to toggle simulator.')
+    } finally {
+      setSimBusy((b) => ({ ...b, [vehicleId]: false }))
+    }
+  }
+
+  // Build a map vehicle_id → device
+  const deviceByVehicle = new Map(devices.map((d) => [d.vehicle_id, d]))
 
   return (
     <div className="page">
@@ -119,37 +142,102 @@ export default function Vehicles() {
                 <th>VIN</th>
                 <th>Make / Model</th>
                 <th>Year</th>
+                <th>OBU</th>
+                <th>Simulator</th>
                 <th>Added</th>
                 <th></th>
               </tr>
             </thead>
             <tbody>
-              {vehicles.map((v) => (
-                <tr key={v.id} style={{ cursor: 'pointer' }} onClick={() => navigate(`/vehicles/${v.id}`)}>
-                  <td style={{ fontFamily: 'monospace', fontSize: '0.85rem', letterSpacing: '0.03em' }}>{v.vin}</td>
-                  <td style={{ fontWeight: 500 }}>{v.make} {v.model_name}</td>
-                  <td>{v.year}</td>
-                  <td style={{ fontSize: '0.8rem', color: '#64748b' }}>{fmtDate(v.created_at)}</td>
-                  <td>
-                    <button
-                      className="btn btn-secondary"
-                      style={{ padding: '0.25rem 0.75rem', fontSize: '0.75rem' }}
-                      onClick={(e) => { e.stopPropagation(); navigate(`/vehicles/${v.id}`) }}
-                    >
-                      View
-                    </button>
-                  </td>
-                </tr>
-              ))}
+              {vehicles.map((v) => {
+                const dev = deviceByVehicle.get(v.id)
+                const running = simRunning[v.id] ?? false
+                const busy = simBusy[v.id] ?? false
+                return (
+                  <tr key={v.id} style={{ cursor: 'pointer' }} onClick={() => navigate(`/vehicles/${v.id}`)}>
+                    <td style={{ fontFamily: 'monospace', fontSize: '0.85rem', letterSpacing: '0.03em' }}>{v.vin}</td>
+                    <td style={{ fontWeight: 500 }}>{v.make} {v.model_name}</td>
+                    <td>{v.year}</td>
+                    <td style={{ fontSize: '0.8rem', color: dev ? '#0f172a' : '#94a3b8' }}>
+                      {dev ? (
+                        <span style={{ fontFamily: 'monospace' }}>{dev.serial}</span>
+                      ) : (
+                        <span style={{ fontStyle: 'italic' }}>None</span>
+                      )}
+                    </td>
+                    <td onClick={(e) => e.stopPropagation()}>
+                      {!dev ? (
+                        <span style={{ fontSize: '0.75rem', color: '#94a3b8' }}>needs OBU</span>
+                      ) : running ? (
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                          <span style={{
+                            display: 'inline-flex',
+                            alignItems: 'center',
+                            gap: '0.3rem',
+                            background: '#dcfce7',
+                            color: '#166534',
+                            fontSize: '0.7rem',
+                            fontWeight: 700,
+                            padding: '0.2rem 0.5rem',
+                            borderRadius: '9999px',
+                            letterSpacing: '0.05em',
+                          }}>
+                            <span style={{
+                              width: '6px', height: '6px', borderRadius: '50%',
+                              background: '#16a34a', display: 'inline-block',
+                              animation: 'pulse 1.4s ease-in-out infinite',
+                            }} />
+                            LIVE SIM
+                          </span>
+                          <button
+                            className="btn btn-danger"
+                            style={{ padding: '0.2rem 0.55rem', fontSize: '0.72rem' }}
+                            disabled={busy}
+                            onClick={() => toggleSim(v.id, running)}
+                          >
+                            {busy ? '…' : 'Stop'}
+                          </button>
+                        </div>
+                      ) : (
+                        <button
+                          className="btn btn-secondary"
+                          style={{ padding: '0.25rem 0.6rem', fontSize: '0.75rem' }}
+                          disabled={busy}
+                          onClick={() => toggleSim(v.id, running)}
+                        >
+                          {busy ? '…' : '▶ Simulate'}
+                        </button>
+                      )}
+                    </td>
+                    <td style={{ fontSize: '0.8rem', color: '#64748b' }}>{fmtDate(v.created_at)}</td>
+                    <td>
+                      <button
+                        className="btn btn-secondary"
+                        style={{ padding: '0.25rem 0.75rem', fontSize: '0.75rem' }}
+                        onClick={(e) => { e.stopPropagation(); navigate(`/vehicles/${v.id}`) }}
+                      >
+                        View
+                      </button>
+                    </td>
+                  </tr>
+                )
+              })}
             </tbody>
           </table>
         )}
       </div>
 
+      <style>{`
+        @keyframes pulse {
+          0%, 100% { opacity: 1; }
+          50% { opacity: 0.3; }
+        }
+      `}</style>
+
       {vehicles.length > 0 && (
         <div style={{ marginTop: '1rem', fontSize: '0.8rem', color: '#94a3b8' }}>
-          Click any row to view live KPIs, trips, and ML scores for that vehicle.
-          Go to <strong>Devices</strong> to attach an OBU to a vehicle.
+          Click any row to view live KPIs, trips, and ML scores.
+          Register an OBU on the <strong>Devices</strong> page to enable simulation or real data.
         </div>
       )}
     </div>

@@ -9,7 +9,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy import text
 
-from app.api import alerts, analytics, auth, clients, devices, fleetview, geofences, reports, scores, vehicles
+from app.api import alerts, analytics, auth, clients, devices, fleetview, geofences, reports, scores, simulator, vehicles
 from app.config import settings
 from app.db import get_session
 from app.security.password import hash_password
@@ -102,8 +102,9 @@ app.include_router(alerts.router,    prefix="/alerts",    tags=["alerts"])
 app.include_router(geofences.router, prefix="/geofences", tags=["geofences"])
 app.include_router(analytics.router, prefix="/analytics", tags=["analytics"])
 app.include_router(scores.router,    prefix="/scores",    tags=["scores"])
-app.include_router(fleetview.router, prefix="/fleetview", tags=["fleetview"])
-app.include_router(reports.router,   prefix="/reports",   tags=["reports"])
+app.include_router(fleetview.router,   prefix="/fleetview",   tags=["fleetview"])
+app.include_router(reports.router,     prefix="/reports",     tags=["reports"])
+app.include_router(simulator.router,   prefix="/simulator",   tags=["simulator"])
 
 
 @app.get("/health", tags=["ops"])

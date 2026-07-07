@@ -54,6 +54,7 @@ export default function App() {
             <Route element={<RequirePasswordOk />}>
               <Route element={<Layout />}>
                 <Route index element={<HomeRoute />} />
+                <Route path="/change-password" element={<ChangePassword />} />
                 <Route
                   path="/admin"
                   element={

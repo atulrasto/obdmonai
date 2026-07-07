@@ -32,13 +32,14 @@ export default function Geofences() {
     setSubmitting(true)
     try {
       await createGeofence({
-        vehicle_id: vehicleId,
         name: gfName,
-        lat: parseFloat(lat),
-        lon: parseFloat(lon),
+        center_lat: parseFloat(lat),
+        center_lon: parseFloat(lon),
         radius_m: parseInt(radius, 10),
+        vehicle_id: vehicleId || null,
       })
       setShowForm(false)
+      setVehicleId('')
       setGfName('')
       setLat('')
       setLon('')
@@ -78,9 +79,9 @@ export default function Geofences() {
           {error && <div className="error-msg">{error}</div>}
           <form onSubmit={handleAdd}>
             <div className="form-group">
-              <label>Vehicle</label>
-              <select value={vehicleId} onChange={(e) => setVehicleId(e.target.value)} required>
-                <option value="">Select vehicle…</option>
+              <label>Vehicle <span style={{ color: '#94a3b8', fontWeight: 400 }}>(optional — leave blank for fleet-wide)</span></label>
+              <select value={vehicleId} onChange={(e) => setVehicleId(e.target.value)}>
+                <option value="">All vehicles (fleet-wide)</option>
                 {vehicles.map((v) => (
                   <option key={v.id} value={v.id}>
                     {v.make} {v.model_name} — {v.vin}
@@ -117,7 +118,7 @@ export default function Geofences() {
         {loading ? (
           <div style={{ padding: '2rem', textAlign: 'center', color: '#94a3b8' }}>Loading…</div>
         ) : geofences.length === 0 ? (
-          <div style={{ padding: '2rem', textAlign: 'center', color: '#94a3b8' }}>No geofences defined</div>
+          <div style={{ padding: '2rem', textAlign: 'center', color: '#94a3b8' }}>No geofences defined yet</div>
         ) : (
           <table className="table">
             <thead>
@@ -132,18 +133,20 @@ export default function Geofences() {
             </thead>
             <tbody>
               {geofences.map((g) => {
-                const v = vehicleMap.get(g.vehicle_id)
+                const v = g.vehicle_id ? vehicleMap.get(g.vehicle_id) : null
                 return (
                   <tr key={g.id}>
                     <td style={{ fontWeight: 500 }}>{g.name}</td>
-                    <td>{v ? `${v.make} ${v.model_name}` : g.vehicle_id.slice(0, 8) + '…'}</td>
+                    <td style={{ fontSize: '0.85rem', color: v ? '#0f172a' : '#94a3b8' }}>
+                      {v ? `${v.make} ${v.model_name} (${v.vin})` : 'Fleet-wide'}
+                    </td>
                     <td style={{ fontSize: '0.8rem', fontFamily: 'monospace', color: '#64748b' }}>
-                      {g.lat.toFixed(5)}, {g.lon.toFixed(5)}
+                      {g.center_lat.toFixed(5)}, {g.center_lon.toFixed(5)}
                     </td>
                     <td>{g.radius_m} m</td>
                     <td>
-                      <span className={`badge ${g.active ? 'badge-cleared' : 'badge-warning'}`}>
-                        {g.active ? 'active' : 'inactive'}
+                      <span className={`badge ${g.is_active ? 'badge-cleared' : 'badge-warning'}`}>
+                        {g.is_active ? 'active' : 'inactive'}
                       </span>
                     </td>
                     <td>

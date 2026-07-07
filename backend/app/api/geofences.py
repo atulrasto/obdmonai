@@ -19,11 +19,13 @@ class GeofenceCreate(BaseModel):
     center_lat: float = Field(..., ge=-90.0, le=90.0)
     center_lon: float = Field(..., ge=-180.0, le=180.0)
     radius_m: float = Field(..., gt=0)
+    vehicle_id: uuid.UUID | None = None
 
 
 class GeofenceRead(BaseModel):
     id: uuid.UUID
     client_id: uuid.UUID
+    vehicle_id: uuid.UUID | None
     name: str
     center_lat: float
     center_lon: float
@@ -41,7 +43,7 @@ async def list_geofences(
 ) -> list[GeofenceRead]:
     rows = (await db.execute(
         text(
-            "SELECT id, client_id, name, center_lat, center_lon, radius_m, is_active, created_at"
+            "SELECT id, client_id, vehicle_id, name, center_lat, center_lon, radius_m, is_active, created_at"
             " FROM geofences WHERE is_active = true ORDER BY created_at"
         ),
     )).fetchall()
@@ -56,12 +58,13 @@ async def create_geofence(
 ) -> GeofenceRead:
     row = (await db.execute(
         text(
-            "INSERT INTO geofences (client_id, name, center_lat, center_lon, radius_m)"
-            " VALUES (:client_id, :name, :lat, :lon, :radius)"
-            " RETURNING id, client_id, name, center_lat, center_lon, radius_m, is_active, created_at"
+            "INSERT INTO geofences (client_id, vehicle_id, name, center_lat, center_lon, radius_m)"
+            " VALUES (:client_id, :vehicle_id, :name, :lat, :lon, :radius)"
+            " RETURNING id, client_id, vehicle_id, name, center_lat, center_lon, radius_m, is_active, created_at"
         ),
         {
             "client_id": user.client_id,
+            "vehicle_id": str(body.vehicle_id) if body.vehicle_id else None,
             "name": body.name,
             "lat": body.center_lat,
             "lon": body.center_lon,

@@ -126,6 +126,8 @@ services:
       DATABASE_URL_DIRECT: ""
       POSTGRES_SUPERUSER: ""
       POSTGRES_SUPERUSER_PASSWORD: ""
+    volumes:
+      - ./infra/mosquitto/certs:/mosquitto/certs:ro
     depends_on:
       migrate:
         condition: service_completed_successfully

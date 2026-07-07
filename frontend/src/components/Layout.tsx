@@ -40,7 +40,18 @@ export default function Layout() {
             </NavLink>
           ))}
         </nav>
-        <div style={{ marginTop: 'auto', padding: '0 1rem' }}>
+        <div style={{ marginTop: 'auto', padding: '0 1rem', display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
+          <NavLink
+            to="/change-password"
+            style={({ isActive }) => ({
+              display: 'block', padding: '0.45rem 0.75rem', borderRadius: 6,
+              fontSize: '0.85rem', textDecoration: 'none',
+              color: isActive ? '#fff' : '#94a3b8',
+              background: isActive ? '#334155' : 'transparent',
+            })}
+          >
+            🔑 Change Password
+          </NavLink>
           <button className="btn btn-secondary" style={{ width: '100%' }} onClick={logout}>
             Sign out
           </button>

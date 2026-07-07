@@ -24,16 +24,46 @@ from app.security.jwt import TokenData
 
 router = APIRouter()
 
-_UTC = timezone.utc
-_BLUE = colors.HexColor("#3b82f6")
+_UTC   = timezone.utc
+_BLUE  = colors.HexColor("#3b82f6")
 _LIGHT = colors.HexColor("#f8fafc")
-_GRID = colors.HexColor("#e2e8f0")
+_GRID  = colors.HexColor("#e2e8f0")
 
 
 def _fmtsec(sec: float) -> str:
     h = int(sec) // 3600
     m = (int(sec) % 3600) // 60
-    return f"{h}h {m}m" if h else f"{m}m"
+    s = int(sec) % 60
+    if h:
+        return f"{h}h {m}m"
+    if m:
+        return f"{m}m {s}s"
+    return f"{s}s"
+
+
+def _opt(val, fmt: str = ".1f", suffix: str = "") -> str:
+    return f"{val:{fmt}}{suffix}" if val is not None else "—"
+
+
+def _table(rows: list[list], col_widths: list, header_blue: bool = True) -> Table:
+    t = Table(rows, colWidths=col_widths)
+    style = [
+        ("ROWBACKGROUNDS", (0, 1), (-1, -1), [colors.white, _LIGHT]),
+        ("GRID",           (0, 0), (-1, -1), 0.4, _GRID),
+        ("TOPPADDING",     (0, 0), (-1, -1), 5),
+        ("BOTTOMPADDING",  (0, 0), (-1, -1), 5),
+        ("LEFTPADDING",    (0, 0), (-1, -1), 8),
+        ("FONTSIZE",       (0, 1), (-1, -1), 9),
+    ]
+    if header_blue:
+        style += [
+            ("BACKGROUND", (0, 0), (-1, 0), _BLUE),
+            ("TEXTCOLOR",  (0, 0), (-1, 0), colors.white),
+            ("FONTNAME",   (0, 0), (-1, 0), "Helvetica-Bold"),
+            ("FONTSIZE",   (0, 0), (-1, 0), 9),
+        ]
+    t.setStyle(TableStyle(style))
+    return t
 
 
 def _build_pdf(
@@ -44,6 +74,7 @@ def _build_pdf(
     from_ts: datetime,
     to_ts: datetime,
     kpi: dict,
+    obd: dict,
     trips: list[dict],
     generated_at: datetime,
 ) -> bytes:
@@ -58,7 +89,8 @@ def _build_pdf(
         bottomMargin=2 * cm,
     )
     styles = getSampleStyleSheet()
-    story = []
+    story  = []
+    W      = 17 * cm  # usable page width
 
     # ── Header ────────────────────────────────────────────────────────────────
     story.append(Paragraph("Vehicle Performance Report", styles["Title"]))
@@ -70,36 +102,68 @@ def _build_pdf(
     ))
     story.append(Spacer(1, 0.5 * cm))
 
-    # ── KPI table ─────────────────────────────────────────────────────────────
+    # ── Driving KPIs ──────────────────────────────────────────────────────────
     story.append(Paragraph("Driving KPIs", styles["Heading3"]))
     story.append(Spacer(1, 0.2 * cm))
 
-    avg_spd = kpi.get("avg_speed")
-    max_spd = kpi.get("max_speed")
-
     kpi_rows = [
         ["Metric", "Value"],
-        ["Readings collected", str(kpi.get("reading_count", 0))],
-        ["Distance", f"{kpi.get('distance_km', 0):.2f} km"],
-        ["Drive time", _fmtsec(kpi.get("drive_time_sec", 0))],
-        ["Idle time", _fmtsec(kpi.get("idle_time_sec", 0))],
-        ["Average speed", f"{avg_spd:.1f} km/h" if avg_spd is not None else "—"],
-        ["Maximum speed", f"{max_spd:.1f} km/h" if max_spd is not None else "—"],
-        ["Harsh events", str(kpi.get("harsh_events", 0))],
+        ["Readings collected",  str(kpi.get("reading_count", 0))],
+        ["Distance",            _opt(kpi.get("distance_km"),    ".2f", " km")],
+        ["Drive time",          _fmtsec(kpi.get("drive_time_sec") or 0)],
+        ["Idle time",           _fmtsec(kpi.get("idle_time_sec")  or 0)],
+        ["Average speed",       _opt(kpi.get("avg_speed"),      ".1f", " km/h")],
+        ["Maximum speed",       _opt(kpi.get("max_speed"),      ".1f", " km/h")],
+        ["Harsh braking events", str(kpi.get("harsh_braking_count") or 0)],
+        ["Overspeed events",    str(kpi.get("overspeed_count")  or 0)],
     ]
+    story.append(_table(kpi_rows, [10 * cm, 7 * cm]))
+    story.append(Spacer(1, 0.75 * cm))
 
-    kpi_table = Table(kpi_rows, colWidths=[9 * cm, 7 * cm])
-    kpi_table.setStyle(TableStyle([
-        ("BACKGROUND",    (0, 0), (-1, 0), _BLUE),
-        ("TEXTCOLOR",     (0, 0), (-1, 0), colors.white),
-        ("FONTNAME",      (0, 0), (-1, 0), "Helvetica-Bold"),
-        ("ROWBACKGROUNDS", (0, 1), (-1, -1), [colors.white, _LIGHT]),
-        ("GRID",          (0, 0), (-1, -1), 0.4, _GRID),
-        ("TOPPADDING",    (0, 0), (-1, -1), 5),
-        ("BOTTOMPADDING", (0, 0), (-1, -1), 5),
-        ("LEFTPADDING",   (0, 0), (-1, -1), 8),
-    ]))
-    story.append(kpi_table)
+    # ── OBD Parameters ────────────────────────────────────────────────────────
+    story.append(Paragraph("OBD / Engine Parameters (period averages)", styles["Heading3"]))
+    story.append(Spacer(1, 0.2 * cm))
+
+    fuel_start = obd.get("fuel_start")
+    fuel_end   = obd.get("fuel_end")
+    fuel_str   = (
+        f"{fuel_start:.1f}% → {fuel_end:.1f}%"
+        if fuel_start is not None and fuel_end is not None
+        else "—"
+    )
+
+    obd_rows = [
+        ["Parameter", "PID",   "Average",                                  "Min",                                   "Max"],
+        ["Engine RPM",        "0x0C",
+         _opt(obd.get("avg_rpm"),         ".0f", " rpm"),
+         _opt(obd.get("min_rpm"),         ".0f", " rpm"),
+         _opt(obd.get("max_rpm"),         ".0f", " rpm")],
+        ["Vehicle Speed",     "0x0D",
+         _opt(obd.get("avg_speed_obd"),   ".1f", " km/h"),
+         _opt(obd.get("min_speed_obd"),   ".1f", " km/h"),
+         _opt(obd.get("max_speed_obd"),   ".1f", " km/h")],
+        ["Coolant Temp",      "0x05",
+         _opt(obd.get("avg_coolant"),     ".1f", " °C"),
+         _opt(obd.get("min_coolant"),     ".1f", " °C"),
+         _opt(obd.get("max_coolant"),     ".1f", " °C")],
+        ["Engine Load",       "0x04",
+         _opt(obd.get("avg_load"),        ".1f", " %"),
+         _opt(obd.get("min_load"),        ".1f", " %"),
+         _opt(obd.get("max_load"),        ".1f", " %")],
+        ["Throttle Position", "0x11",
+         _opt(obd.get("avg_throttle"),    ".1f", " %"),
+         _opt(obd.get("min_throttle"),    ".1f", " %"),
+         _opt(obd.get("max_throttle"),    ".1f", " %")],
+        ["Intake Air Temp",   "0x0F",
+         _opt(obd.get("avg_intake"),      ".1f", " °C"),
+         _opt(obd.get("min_intake"),      ".1f", " °C"),
+         _opt(obd.get("max_intake"),      ".1f", " °C")],
+        ["Fuel Level",        "0x2F",   fuel_str,   "—",   "—"],
+        ["Engine Run Time",   "0x1F",
+         _opt(obd.get("total_run_min"),   ".0f", " min"),
+         "—", "—"],
+    ]
+    story.append(_table(obd_rows, [4.5 * cm, 1.8 * cm, 4 * cm, 3 * cm, 3 * cm]))
     story.append(Spacer(1, 0.75 * cm))
 
     # ── Trip table ────────────────────────────────────────────────────────────
@@ -107,30 +171,32 @@ def _build_pdf(
     story.append(Spacer(1, 0.2 * cm))
 
     if trips:
-        trip_rows = [["#", "Started", "Distance", "Drive time", "Avg speed"]]
+        trip_rows = [["#", "Started (UTC)", "Distance", "Duration", "Avg speed", "Max speed"]]
         for i, t in enumerate(trips[-10:], 1):
-            started = datetime.fromisoformat(str(t.get("started_at", ""))).strftime("%Y-%m-%d %H:%M") if t.get("started_at") else "—"
-            a_spd = t.get("avg_speed")
+            raw_start = t.get("start_ts") or t.get("started_at")
+            if raw_start:
+                try:
+                    started = datetime.fromisoformat(str(raw_start)).strftime("%Y-%m-%d %H:%M")
+                except Exception:
+                    started = str(raw_start)[:16]
+            else:
+                started = "—"
+
+            dur_sec  = t.get("duration_sec") or t.get("drive_time_sec") or 0
+            a_spd    = t.get("avg_speed")
+            mx_spd   = t.get("max_speed")
             trip_rows.append([
                 str(i),
                 started,
-                f"{t.get('distance_km', 0):.2f} km",
-                _fmtsec(t.get("drive_time_sec", 0)),
-                f"{a_spd:.0f} km/h" if a_spd is not None else "—",
+                _opt(t.get("distance_km"),  ".2f", " km"),
+                _fmtsec(dur_sec),
+                _opt(a_spd, ".0f", " km/h"),
+                _opt(mx_spd, ".0f", " km/h"),
             ])
-        trip_table = Table(trip_rows, colWidths=[1.5 * cm, 5 * cm, 3.5 * cm, 3 * cm, 3.5 * cm])
-        trip_table.setStyle(TableStyle([
-            ("BACKGROUND",    (0, 0), (-1, 0), _BLUE),
-            ("TEXTCOLOR",     (0, 0), (-1, 0), colors.white),
-            ("FONTNAME",      (0, 0), (-1, 0), "Helvetica-Bold"),
-            ("ROWBACKGROUNDS", (0, 1), (-1, -1), [colors.white, _LIGHT]),
-            ("GRID",          (0, 0), (-1, -1), 0.4, _GRID),
-            ("TOPPADDING",    (0, 0), (-1, -1), 4),
-            ("BOTTOMPADDING", (0, 0), (-1, -1), 4),
-            ("LEFTPADDING",   (0, 0), (-1, -1), 6),
-            ("FONTSIZE",      (0, 1), (-1, -1), 9),
-        ]))
-        story.append(trip_table)
+        story.append(_table(
+            trip_rows,
+            [1 * cm, 4.5 * cm, 2.8 * cm, 2.4 * cm, 2.8 * cm, 2.8 * cm],
+        ))
     else:
         story.append(Paragraph("No trips recorded in this period.", styles["Normal"]))
 
@@ -161,7 +227,7 @@ async def vehicle_report_pdf(
     if from_ts is None:
         from_ts = to_ts - timedelta(hours=24)
 
-    # Vehicle info (RLS ensures tenant isolation)
+    # Vehicle info
     vrow = (await db.execute(
         text("SELECT make, model_name, year, vin FROM vehicles WHERE id = :vid"),
         {"vid": str(vehicle_id)},
@@ -172,24 +238,47 @@ async def vehicle_report_pdf(
     # KPIs via SECURITY DEFINER function
     krow = (await db.execute(
         text("SELECT * FROM analytics_vehicle_kpis(:vid, :cid, :from_ts, :to_ts)"),
-        {
-            "vid": str(vehicle_id),
-            "cid": user.client_id,
-            "from_ts": from_ts,
-            "to_ts": to_ts,
-        },
+        {"vid": str(vehicle_id), "cid": user.client_id, "from_ts": from_ts, "to_ts": to_ts},
     )).fetchone()
     kpi: dict = dict(krow._mapping) if krow else {}
+
+    # OBD averages / min / max directly from telemetry (RLS active via get_tenant_db)
+    orow = (await db.execute(
+        text(
+            "SELECT"
+            "  AVG(obd_rpm)          AS avg_rpm,"
+            "  MIN(obd_rpm)          AS min_rpm,"
+            "  MAX(obd_rpm)          AS max_rpm,"
+            "  AVG(obd_speed)        AS avg_speed_obd,"
+            "  MIN(obd_speed)        AS min_speed_obd,"
+            "  MAX(obd_speed)        AS max_speed_obd,"
+            "  AVG(obd_coolant)      AS avg_coolant,"
+            "  MIN(obd_coolant)      AS min_coolant,"
+            "  MAX(obd_coolant)      AS max_coolant,"
+            "  AVG(obd_load)         AS avg_load,"
+            "  MIN(obd_load)         AS min_load,"
+            "  MAX(obd_load)         AS max_load,"
+            "  AVG(obd_throttle)     AS avg_throttle,"
+            "  MIN(obd_throttle)     AS min_throttle,"
+            "  MAX(obd_throttle)     AS max_throttle,"
+            "  AVG(obd_intake_temp)  AS avg_intake,"
+            "  MIN(obd_intake_temp)  AS min_intake,"
+            "  MAX(obd_intake_temp)  AS max_intake,"
+            "  first(obd_fuel_level, time) AS fuel_start,"
+            "  last(obd_fuel_level,  time) AS fuel_end,"
+            "  MAX(obd_run_time) / 60.0   AS total_run_min"
+            " FROM telemetry"
+            " WHERE vehicle_id = :vid AND client_id = :cid"
+            "   AND time BETWEEN :from_ts AND :to_ts"
+        ),
+        {"vid": str(vehicle_id), "cid": str(user.client_id), "from_ts": from_ts, "to_ts": to_ts},
+    )).fetchone()
+    obd: dict = dict(orow._mapping) if orow else {}
 
     # Trips via SECURITY DEFINER function
     trip_rows = (await db.execute(
         text("SELECT * FROM analytics_list_trips(:vid, :cid, :from_ts, :to_ts)"),
-        {
-            "vid": str(vehicle_id),
-            "cid": user.client_id,
-            "from_ts": from_ts,
-            "to_ts": to_ts,
-        },
+        {"vid": str(vehicle_id), "cid": user.client_id, "from_ts": from_ts, "to_ts": to_ts},
     )).fetchall()
     trips = [dict(r._mapping) for r in trip_rows]
 
@@ -201,6 +290,7 @@ async def vehicle_report_pdf(
         from_ts=from_ts,
         to_ts=to_ts,
         kpi=kpi,
+        obd=obd,
         trips=trips,
         generated_at=now,
     )

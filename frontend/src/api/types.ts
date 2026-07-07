@@ -52,13 +52,13 @@ export interface AlertRead {
 
 export interface GeofenceRead {
   id: string
-  vehicle_id: string
   client_id: string
+  vehicle_id: string | null
   name: string
-  lat: number
-  lon: number
+  center_lat: number
+  center_lon: number
   radius_m: number
-  active: boolean
+  is_active: boolean
   created_at: string
 }
 
@@ -140,15 +140,47 @@ export interface DeviceCreateRequest {
 }
 
 export interface GeofenceCreateRequest {
-  vehicle_id: string
   name: string
-  lat: number
-  lon: number
+  center_lat: number
+  center_lon: number
   radius_m: number
+  vehicle_id?: string | null
 }
 
 export interface ClientCreateRequest {
   name: string
   slug: string
   owner_email: string
+}
+
+export interface TrendPoint {
+  ts: string
+  value: number | null
+}
+
+export interface LatestTelemetryRead {
+  ts: string
+  obd_rpm: number | null
+  obd_speed: number | null
+  obd_coolant: number | null
+  obd_load: number | null
+  obd_throttle: number | null
+  obd_intake_temp: number | null
+  obd_fuel_level: number | null
+  obd_run_time: number | null
+  gps_lat: number | null
+  gps_lon: number | null
+  gps_alt: number | null
+  gps_hdg: number | null
+  gps_spd: number | null
+  imu_ax: number | null
+  imu_ay: number | null
+  imu_az: number | null
+  dtc: string[]
+  ign: boolean | null
+}
+
+export interface SimStatus {
+  vehicle_id: string
+  is_running: boolean
 }

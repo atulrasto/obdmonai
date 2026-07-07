@@ -18,6 +18,9 @@ import type {
   ClientRead,
   ClientCreateRequest,
   ClientCreateResponse,
+  LatestTelemetryRead,
+  TrendPoint,
+  SimStatus,
 } from './types'
 
 const BASE = (import.meta.env.VITE_API_URL as string | undefined) ?? '/api'
@@ -107,6 +110,14 @@ export const getVehicleKpis = (id: string, fromTs: string, toTs: string) =>
     })
     .then((r) => r.data)
 
+export const getLatestTelemetry = (id: string) =>
+  ax.get<LatestTelemetryRead>(`/analytics/vehicles/${id}/latest`).then((r) => r.data)
+
+export const getParamTrend = (id: string, param: string, period: string, minutes?: number) =>
+  ax.get<TrendPoint[]>(`/analytics/vehicles/${id}/trend`, {
+    params: minutes != null ? { param, period, minutes } : { param, period },
+  }).then((r) => r.data)
+
 export const listTrips = (id: string, fromTs: string, toTs: string) =>
   ax
     .get<TripRead[]>(`/analytics/vehicles/${id}/trips`, {
@@ -140,6 +151,17 @@ export const getFleetViewSummary = (id: string, hours = 24) =>
   ax
     .get<SummaryResponse>(`/fleetview/vehicles/${id}/summary`, { params: { hours } })
     .then((r) => r.data)
+
+// ── Simulator ─────────────────────────────────────────────────────────────────
+
+export const listSimStatus = () =>
+  ax.get<SimStatus[]>('/simulator').then((r) => r.data)
+
+export const startSim = (vehicleId: string) =>
+  ax.post<SimStatus>(`/simulator/${vehicleId}/start`).then((r) => r.data)
+
+export const stopSim = (vehicleId: string) =>
+  ax.post<SimStatus>(`/simulator/${vehicleId}/stop`).then((r) => r.data)
 
 // ── Reports (PDF) ─────────────────────────────────────────────────────────────
 

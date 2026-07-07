@@ -2,6 +2,7 @@ import { useState, type FormEvent } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { login } from '../api/client'
 import { useAuth } from '../contexts/AuthContext'
+import PasswordInput from '../components/PasswordInput'
 
 export default function Login() {
   const [email, setEmail] = useState('')
@@ -51,12 +52,11 @@ export default function Login() {
           </div>
           <div className="form-group">
             <label htmlFor="password">Password</label>
-            <input
+            <PasswordInput
               id="password"
-              type="password"
               autoComplete="current-password"
               value={password}
-              onChange={(e) => setPassword(e.target.value)}
+              onChange={setPassword}
               required
             />
           </div>
